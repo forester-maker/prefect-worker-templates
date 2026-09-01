@@ -182,24 +182,3 @@ ARNs, the ECS *execution* role ARN (`prefect-ecs-execution`, which Fargate needs
 the image and the worker requires if you turn on `configure_cloudwatch_logs`), the
 `prefect-spot` cluster, region `us-east-1`, and the git repo in `prefect.yaml`.
 
-## Before you rely on it
-
-`validate.py` checks the templates client-side against Prefect's own schema models and
-the ECS and Kubernetes worker configuration models. It created no pool in your workspace
-and ran no flow.
-
-Confirm Prefect Cloud accepts a *custom* base job template for `prefect:managed`. Managed
-pools have a fixed `job_configuration` surface, and Cloud may normalize or reject a
-narrowed `variables` block. Run `managed/create-pool.sh` in a scratch workspace and check
-that `prefect work-pool inspect managed-bronze` round-trips your schema. If Cloud pins
-the template, the fallback is unchanged in effect: keep the pool default template, set
-tier defaults in the UI, and rely on per-deployment and per-run `job_variables`, which
-are independently confirmed working.
-
-`flows/runtime_storage.py` makes two assumptions about the managed runtime, both
-unverified against Cloud, and both raising a named error rather than a `KeyError` if
-wrong: that `federated_identity` injects credentials boto's default chain can find, and
-that a region is exported as `AWS_REGION` or `AWS_DEFAULT_REGION`. If neither region
-variable is present, add `AWS_REGION` to the pool's `env`. The template does not set it
-so that `federated_identity.aws_region_name` stays the single place a region is
-configured, rather than drifting against a copy.
