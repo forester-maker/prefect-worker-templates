@@ -1,0 +1,47 @@
+# Managed execution: code must come from remote storage (no local build/push,
+# no custom image). Storage *access* is granted by the assumed role.
+name: managed-execution
+prefect-version: ">=3.0.0"
+
+build: null
+push: null
+
+pull:
+  - prefect.deployments.steps.git_clone:
+      repository: https://github.com/acme/pipelines.git
+      branch: main
+
+definitions:
+  job_variables: &managed_job_variables
+    pip_packages: ["prefect-aws>=0.5.0", "s3fs", "pandas"]
+  work_pool: &managed_pool
+    name: managed-bronze
+    job_variables: *managed_job_variables
+
+deployments:
+  # Inherits the pool default tier (bronze).
+  - name: ingest-bronze
+    entrypoint: flows/runtime_storage.py:ingest
+    work_pool: *managed_pool
+
+  # Same pool, different storage tier -- pinned at deploy time. `env` and
+  # `federated_identity` replace the pool defaults whole, so both keys of each
+  # object are spelled out here rather than patched.
+  - name: ingest-gold
+    entrypoint: flows/runtime_storage.py:ingest
+    work_pool:
+      <<: *managed_pool
+      job_variables:
+        <<: *managed_job_variables
+        env:
+          DATA_BUCKET: acme-lake-gold
+          DATA_PREFIX: prefect/
+        federated_identity:
+          aws_role_arn: arn:aws:iam::111122223333:role/prefect-managed-gold
+          aws_region_name: us-east-1
+          duration_seconds: 3600
+
+  # Tier left unset here on purpose: callers choose it per run.
+  - name: ingest-adhoc
+    entrypoint: flows/runtime_storage.py:ingest
+    work_pool: *managed_pool

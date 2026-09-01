@@ -1,0 +1,79 @@
+{
+  "job_configuration": {
+    "env": "{{ env }}",
+    "image": "{{ image }}",
+    "timeout": "{{ timeout }}",
+    "pip_packages": "{{ pip_packages }}",
+    "federated_identity": "{{ federated_identity }}"
+  },
+  "variables": {
+    "type": "object",
+    "description": "Managed execution pool. Storage access is granted per-run by assuming an IAM role via OIDC; there are no volume mounts on managed execution.",
+    "additionalProperties": false,
+    "properties": {
+      "image": {
+        "title": "Image",
+        "description": "Official Prefect image only. Managed execution cannot run custom images.",
+        "type": "string",
+        "default": "prefecthq/prefect-client:3-python3.12",
+        "enum": [
+          "prefecthq/prefect-client:3-python3.12",
+          "prefecthq/prefect-client:3-python3.13"
+        ]
+      },
+      "pip_packages": {
+        "title": "Pip Packages",
+        "description": "Installed via pip at runtime, before any pull steps.",
+        "type": "array",
+        "items": { "type": "string" },
+        "default": ["prefect-aws>=0.5.0", "s3fs"]
+      },
+      "env": {
+        "title": "Environment Variables",
+        "description": "DATA_BUCKET / DATA_PREFIX select the storage location for the run. An override replaces this whole object rather than merging into it, so DATA_BUCKET is required: a partial override that forgets it is rejected at run creation instead of failing mid-flow.",
+        "type": "object",
+        "additionalProperties": { "type": "string" },
+        "required": ["DATA_BUCKET"],
+        "default": {
+          "DATA_BUCKET": "acme-lake-bronze",
+          "DATA_PREFIX": "prefect/",
+          "PREFECT_LOGGING_LEVEL": "INFO"
+        }
+      },
+      "timeout": {
+        "title": "Timeout",
+        "description": "Seconds before the run is forcibly crashed. Hard max 86400 (24h).",
+        "type": "integer",
+        "default": 14400,
+        "exclusiveMinimum": 0,
+        "maximum": 86400
+      },
+      "federated_identity": {
+        "title": "Federated Identity",
+        "description": "Assume an IAM role via STS AssumeRoleWithWebIdentity and inject short-lived credentials. The role's policy is what actually maps this run to a bucket.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["aws_role_arn", "aws_region_name"],
+        "properties": {
+          "aws_role_arn": {
+            "title": "AWS Role ARN",
+            "type": "string",
+            "default": "arn:aws:iam::111122223333:role/prefect-managed-bronze"
+          },
+          "aws_region_name": {
+            "title": "AWS Region Name",
+            "type": "string",
+            "default": "us-east-1"
+          },
+          "duration_seconds": {
+            "title": "Session Duration (seconds)",
+            "type": "integer",
+            "minimum": 900,
+            "maximum": 43200,
+            "default": 3600
+          }
+        }
+      }
+    }
+  }
+}

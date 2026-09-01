@@ -1,0 +1,91 @@
+{
+  "job_configuration": {
+    "command": "{{ command }}",
+    "env": "{{ env }}",
+    "labels": "{{ labels }}",
+    "name": "{{ name }}",
+    "namespace": "{{ namespace }}",
+    "cluster_config": "{{ cluster_config }}",
+    "job_watch_timeout_seconds": "{{ job_watch_timeout_seconds }}",
+    "pod_watch_timeout_seconds": "{{ pod_watch_timeout_seconds }}",
+    "stream_output": "{{ stream_output }}",
+    "job_manifest": {
+      "apiVersion": "batch/v1",
+      "kind": "Job",
+      "metadata": {
+        "annotations": "{{ annotations }}",
+        "generateName": "{{ name }}-",
+        "labels": "{{ labels }}",
+        "namespace": "{{ namespace }}"
+      },
+      "spec": {
+        "backoffLimit": 0,
+        "template": {
+          "spec": {
+            "completions": 1,
+            "parallelism": 1,
+            "restartPolicy": "Never",
+            "serviceAccountName": "{{ service_account_name }}",
+            "terminationGracePeriodSeconds": 110,
+            "nodeSelector": {
+              "eks.amazonaws.com/capacityType": "SPOT"
+            },
+            "tolerations": [
+              {
+                "key": "spot",
+                "operator": "Equal",
+                "value": "true",
+                "effect": "NoSchedule"
+              }
+            ],
+            "containers": [
+              {
+                "args": "{{ command }}",
+                "env": "{{ env }}",
+                "image": "{{ image }}",
+                "imagePullPolicy": "{{ image_pull_policy }}",
+                "name": "prefect-job",
+                "resources": {
+                  "limits": {
+                    "cpu": "{{ cpu_limit }}",
+                    "memory": "{{ memory_limit }}"
+                  },
+                  "requests": {
+                    "cpu": "{{ cpu_request }}",
+                    "memory": "{{ memory_request }}"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "ttlSecondsAfterFinished": "{{ finished_job_ttl }}"
+      }
+    }
+  },
+  "variables": {
+    "type": "object",
+    "description": "Spot-only Kubernetes pool. nodeSelector/tolerations and backoffLimit are baked into job_manifest and are not exposed as variables, so deployments cannot schedule onto on-demand nodes. Swap the nodeSelector for your cloud: GKE cloud.google.com/gke-spot=true, AKS kubernetes.azure.com/scalesetpriority=spot.",
+    "additionalProperties": false,
+    "properties": {
+      "name": { "title": "Name", "anyOf": [{ "type": "string" }, { "type": "null" }], "default": null },
+      "env": { "title": "Environment Variables", "type": "object", "additionalProperties": { "anyOf": [{ "type": "string" }, { "type": "null" }] } },
+      "labels": { "title": "Labels", "type": "object", "additionalProperties": { "type": "string" } },
+      "command": { "title": "Command", "anyOf": [{ "type": "string" }, { "type": "null" }], "default": null },
+      "annotations": { "title": "Annotations", "type": "object", "additionalProperties": { "type": "string" } },
+      "namespace": { "title": "Namespace", "type": "string", "default": "prefect" },
+      "image": { "title": "Image", "anyOf": [{ "type": "string" }, { "type": "null" }], "default": null },
+      "service_account_name": { "title": "Service Account Name", "anyOf": [{ "type": "string" }, { "type": "null" }], "default": "prefect-worker" },
+      "image_pull_policy": { "title": "Image Pull Policy", "type": "string", "default": "IfNotPresent", "enum": ["IfNotPresent", "Always", "Never"] },
+      "finished_job_ttl": { "title": "Finished Job TTL", "anyOf": [{ "type": "integer" }, { "type": "null" }], "default": 300 },
+      "job_watch_timeout_seconds": { "title": "Job Watch Timeout Seconds", "anyOf": [{ "type": "integer" }, { "type": "null" }], "default": null },
+      "pod_watch_timeout_seconds": { "title": "Pod Watch Timeout Seconds", "type": "integer", "default": 60 },
+      "stream_output": { "title": "Stream Output", "type": "boolean", "default": true },
+      "cpu_request": { "title": "CPU Request", "anyOf": [{ "type": "string" }, { "type": "null" }], "default": "500m" },
+      "cpu_limit": { "title": "CPU Limit", "anyOf": [{ "type": "string" }, { "type": "null" }], "default": "2" },
+      "memory_request": { "title": "Memory Request", "anyOf": [{ "type": "string" }, { "type": "null" }], "default": "1Gi" },
+      "memory_limit": { "title": "Memory Limit", "anyOf": [{ "type": "string" }, { "type": "null" }], "default": "4Gi" },
+      "cluster_config": { "title": "Cluster Config", "anyOf": [{ "type": "object" }, { "type": "null" }], "default": null }
+    }
+  }
+}

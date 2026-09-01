@@ -1,0 +1,96 @@
+{
+  "job_configuration": {
+    "command": "{{ command }}",
+    "env": "{{ env }}",
+    "labels": "{{ labels }}",
+    "name": "{{ name }}",
+    "cluster": "{{ cluster }}",
+    "aws_credentials": "{{ aws_credentials }}",
+    "container_name": "{{ container_name }}",
+    "configure_cloudwatch_logs": "{{ configure_cloudwatch_logs }}",
+    "cloudwatch_logs_options": "{{ cloudwatch_logs_options }}",
+    "cloudwatch_logs_prefix": "{{ cloudwatch_logs_prefix }}",
+    "network_configuration": "{{ network_configuration }}",
+    "auto_deregister_task_definition": "{{ auto_deregister_task_definition }}",
+    "match_latest_revision_in_family": "{{ match_latest_revision_in_family }}",
+    "stream_output": true,
+    "task_start_timeout_seconds": 300,
+    "task_watch_poll_interval": 5.0,
+    "vpc_id": "{{ vpc_id }}",
+    "execution_role_arn": "{{ execution_role_arn }}",
+    "task_definition": {
+      "containerDefinitions": [
+        {
+          "image": "{{ image }}",
+          "name": "{{ container_name }}"
+        }
+      ],
+      "cpu": "{{ cpu }}",
+      "executionRoleArn": "{{ execution_role_arn }}",
+      "family": "{{ family }}",
+      "memory": "{{ memory }}"
+    },
+    "task_run_request": {
+      "launchType": "FARGATE_SPOT",
+      "cluster": "{{ cluster }}",
+      "overrides": {
+        "containerOverrides": [
+          {
+            "command": "{{ command }}",
+            "cpu": "{{ cpu }}",
+            "environment": "{{ env }}",
+            "memory": "{{ memory }}",
+            "name": "{{ container_name }}"
+          }
+        ],
+        "cpu": "{{ cpu }}",
+        "memory": "{{ memory }}",
+        "taskRoleArn": "{{ task_role_arn }}"
+      },
+      "tags": "{{ labels }}",
+      "taskDefinition": "{{ task_definition_arn }}"
+    }
+  },
+  "variables": {
+    "type": "object",
+    "description": "Spot-only ECS pool. launchType is the literal 'FARGATE_SPOT' and neither launch_type nor capacity_provider_strategy is declared as a variable, so no deployment can request on-demand. The ECS worker converts that literal into a FARGATE_SPOT capacityProviderStrategy and drops launchType before calling RunTask -- keeping the literal (rather than pre-writing the strategy here) is what makes the worker build a Fargate-shaped task definition: awsvpc networkMode and FARGATE in requiresCompatibilities. stream_output, task_start_timeout_seconds and task_watch_poll_interval are fixed here because the ECS worker does not expose them as variables.",
+    "additionalProperties": false,
+    "properties": {
+      "name": { "title": "Name", "anyOf": [{ "type": "string" }, { "type": "null" }], "default": null },
+      "env": { "title": "Environment Variables", "type": "object", "additionalProperties": { "anyOf": [{ "type": "string" }, { "type": "null" }] } },
+      "labels": { "title": "Labels", "type": "object", "additionalProperties": { "type": "string" } },
+      "command": { "title": "Command", "anyOf": [{ "type": "string" }, { "type": "null" }], "default": null },
+      "image": { "title": "Image", "anyOf": [{ "type": "string" }, { "type": "null" }], "default": null },
+      "cpu": { "title": "CPU", "anyOf": [{ "type": "integer" }, { "type": "null" }], "default": 1024 },
+      "memory": { "title": "Memory", "anyOf": [{ "type": "integer" }, { "type": "null" }], "default": 2048 },
+      "family": { "title": "Family", "anyOf": [{ "type": "string" }, { "type": "null" }], "default": null },
+      "cluster": { "title": "Cluster", "anyOf": [{ "type": "string" }, { "type": "null" }], "default": "prefect-spot" },
+      "container_name": { "title": "Container Name", "anyOf": [{ "type": "string" }, { "type": "null" }], "default": null },
+      "task_definition_arn": { "title": "Task Definition ARN", "anyOf": [{ "type": "string" }, { "type": "null" }], "default": null },
+      "task_role_arn": { "title": "Task Role ARN", "anyOf": [{ "type": "string" }, { "type": "null" }], "default": null },
+      "execution_role_arn": {
+        "title": "Execution Role ARN",
+        "description": "Required by Fargate to pull the image, and required by the worker whenever configure_cloudwatch_logs is true.",
+        "anyOf": [{ "type": "string" }, { "type": "null" }],
+        "default": "arn:aws:iam::111122223333:role/prefect-ecs-execution"
+      },
+      "vpc_id": { "title": "VPC ID", "anyOf": [{ "type": "string" }, { "type": "null" }], "default": null },
+      "network_configuration": { "title": "Network Configuration", "type": "object" },
+      "configure_cloudwatch_logs": {
+        "title": "Configure CloudWatch Logs",
+        "description": "Needs logs:CreateLogStream, logs:CreateLogGroup and logs:PutLogEvents on the execution role.",
+        "anyOf": [{ "type": "boolean" }, { "type": "null" }],
+        "default": false
+      },
+      "cloudwatch_logs_options": { "title": "CloudWatch Logs Options", "type": "object", "additionalProperties": { "type": "string" } },
+      "cloudwatch_logs_prefix": { "title": "CloudWatch Logs Prefix", "anyOf": [{ "type": "string" }, { "type": "null" }], "default": null },
+      "auto_deregister_task_definition": { "title": "Auto Deregister Task Definition", "type": "boolean", "default": false },
+      "match_latest_revision_in_family": { "title": "Match Latest Revision In Family", "type": "boolean", "default": true },
+      "aws_credentials": {
+        "title": "AWS Credentials",
+        "description": "Leave unset to use the worker's own credentials (its task role / instance profile). Declaring a default of null here would override that fallback with None and break every run, so this variable deliberately has no default. To use a stored block, pass a block reference as this job variable.",
+        "anyOf": [{ "type": "object" }, { "type": "null" }]
+      }
+    }
+  }
+}
