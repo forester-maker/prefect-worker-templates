@@ -1,0 +1,118 @@
+# Self-managed execution: image built and pushed at deploy time.
+#
+# The counterpart to ../managed/prefect.yaml, which sets `build: null` and `push: null`
+# because a prefect:managed pool rejects custom images. These pools run in your own
+# account, take a free-form `image`, and so the build and push actions have work to do.
+#
+# Three things moved out of job_variables and into the image or the role:
+#
+#   managed pool                    here
+#   ------------------------------  ----------------------------------------------------
+#   pip_packages: [...]             requirements.txt, baked in at build time. Neither the
+#                                   ECS nor the Kubernetes base job template has a
+#                                   pip_packages variable.
+#   federated_identity.aws_role_arn ECS: task_role_arn.  K8s: service_account_name with
+#                                   an IRSA annotation. Both put credentials on boto's
+#                                   default chain, which is what runtime_storage.py
+#                                   already reads, so the flow code needs no change.
+#   image: <official Prefect image> the image built below.
+#
+# When it runs:
+#   build  at `prefect deploy`, on your machine or in CI
+#   push   at `prefect deploy`, after build succeeds
+#   pull   at run time, inside the container, on every flow run
+
+name: self-managed-execution
+prefect-version: ">=3.0.0"
+
+build:
+  # Tag with the commit, not `latest`. A mutable tag makes "which code ran" unanswerable
+  # after the fact, and on Kubernetes it interacts badly with image_pull_policy.
+  - prefect.deployments.steps.run_shell_script:
+      id: get-commit-hash
+      script: git rev-parse --short HEAD
+      stream_output: false
+
+  - prefect_docker.deployments.steps.build_docker_image:
+      id: build-image
+      requires: prefect-docker>=0.6.0
+      image_name: "{{ $ECR_REGISTRY }}/prefect-pipelines"
+      tag: "{{ get-commit-hash.stdout }}"
+      dockerfile: Dockerfile
+      # `platform` is not a declared parameter; it reaches the Docker SDK through
+      # **build_kwargs. Set it explicitly, because an arm64 image built on an M-series
+      # Mac fails at run time on x86 Fargate rather than at build time.
+      platform: linux/amd64
+
+push:
+  # The field is `tag`. Prefect's API reference shows `image_tag` in one example; that
+  # string does not appear anywhere in prefect-docker 0.7.3's source. Use `tag`.
+  - prefect_docker.deployments.steps.push_docker_image:
+      requires: prefect-docker>=0.6.0
+      image_name: "{{ build-image.image_name }}"
+      tag: "{{ build-image.tag }}"
+      credentials: "{{ prefect.blocks.docker-registry-credentials.ecr }}"
+
+  # ECR alternative, if you would rather not hold a registry block. ECR auth tokens
+  # expire after 12 hours, so this logs in fresh at each deploy. Put it in `build`
+  # BEFORE the build step if your Dockerfile pulls a private base image.
+  #
+  # - prefect.deployments.steps.run_shell_script:
+  #     script: |
+  #       aws ecr get-login-password --region us-east-1 \
+  #         | docker login --username AWS --password-stdin $ECR_REGISTRY
+
+pull:
+  # Code is in the image, so nothing is fetched here. This only has to match the
+  # Dockerfile's WORKDIR/COPY. Leaving a git_clone in place instead would run the
+  # repository's code and quietly ignore everything you just built.
+  - prefect.deployments.steps.set_working_directory:
+      directory: /opt/prefect
+
+definitions:
+  # `{{ build-image.image }}` is the full name:tag the build step produced. Templating it
+  # rather than retyping the string is what stops the deployment pointing at a tag that
+  # the build never produced.
+  image: &image "{{ build-image.image }}"
+
+  aws_env: &aws_env
+    # runtime_storage.py raises if neither AWS_REGION nor AWS_DEFAULT_REGION is set, and
+    # neither is guaranteed to be present in an ECS task or a Kubernetes pod. Set it.
+    AWS_REGION: us-east-1
+    DATA_BUCKET: acme-lake-bronze
+    DATA_PREFIX: prefect/
+
+deployments:
+  # ---------------------------------------------------------------------------
+  # ECS on spot. Credentials come from task_role_arn via the ECS credential
+  # provider, so boto's default chain finds them with no block and no static key.
+  # ---------------------------------------------------------------------------
+  - name: ingest-ecs-spot
+    entrypoint: flows/runtime_storage.py:ingest
+    work_pool:
+      name: ecs-spot
+      job_variables:
+        image: *image
+        cpu: 1024
+        memory: 4096
+        task_role_arn: arn:aws:iam::111122223333:role/prefect-ecs-task-bronze
+        execution_role_arn: arn:aws:iam::111122223333:role/prefect-ecs-execution
+        # `env` replaces the pool default wholesale rather than merging, so a partial
+        # override drops the keys you left out. Same trap as the managed pool.
+        env: *aws_env
+
+  # ---------------------------------------------------------------------------
+  # Kubernetes on spot. Credentials come from the service account's IRSA
+  # annotation, which again lands on boto's default chain.
+  # ---------------------------------------------------------------------------
+  - name: ingest-k8s-spot
+    entrypoint: flows/runtime_storage.py:ingest
+    work_pool:
+      name: k8s-spot
+      job_variables:
+        image: *image
+        image_pull_policy: Always   # a mutable tag with IfNotPresent serves a stale image
+        cpu_request: "1"
+        memory_request: 4Gi
+        service_account_name: prefect-runner-bronze
+        env: *aws_env

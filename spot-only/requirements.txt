@@ -1,0 +1,6 @@
+# Baked into the image at build time. On the managed pool these same three were
+# `pip_packages` in job_variables, installed per run; ECS and Kubernetes job templates
+# have no `pip_packages` variable, so the image is where they go instead.
+prefect-aws>=0.5.0
+s3fs
+pandas
